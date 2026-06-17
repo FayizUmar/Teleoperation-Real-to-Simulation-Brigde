@@ -1,0 +1,34 @@
+[project]
+name = "so101-lite"
+version = "0.1.0"
+description = "Lean SO101 MuJoCo simulation + teleoperation + recording stack (low-latency successor to so101-nexus)"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=0.29",
+    "mujoco>=3.1",
+    "numpy>=1.26",
+    "opencv-python>=4.9",
+]
+
+[project.optional-dependencies]
+teleop = [
+    # Physical leader-arm driver + LeRobot dataset writer.
+    "lerobot>=0.5",
+]
+
+[project.scripts]
+so101-lite = "so101_lite.teleop.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/so101_lite"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/so101_lite/assets" = "so101_lite/assets"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

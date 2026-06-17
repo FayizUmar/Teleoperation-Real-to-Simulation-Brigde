@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Recordings / datasets / scratch
+datasets/
+recordings/
+*.mp4
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
