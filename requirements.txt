@@ -1,0 +1,16 @@
+# so101-lite runtime dependencies.
+# Mirrors pyproject.toml. Install with:  pip install -r requirements.txt
+#
+# Tip: editable install is preferred for development:
+#   pip install -e ".[teleop]"
+
+# --- Simulation core (sim + envs + camera windows) ---
+gymnasium>=0.29
+mujoco>=3.1
+numpy>=1.26
+opencv-python>=4.9
+
+# --- Teleop + recording (physical leader driver + LeRobot dataset writer) ---
+# Pulls in torch, pyserial, huggingface_hub, etc. transitively.
+# Omit this line if you only need the simulator, not teleop/recording.
+lerobot>=0.5
