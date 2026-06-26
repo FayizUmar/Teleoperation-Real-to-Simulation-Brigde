@@ -259,9 +259,18 @@ class OverheadCamera(_CameraObservation):
         width: int = 640,
         height: int = 480,
         fov_deg: float = 45.0,
+        x_offset: float = 0.0,
+        y_offset: float = 0.0,
+        height_offset: float = 0.0,
     ) -> None:
         super().__init__(width=width, height=height)
         self.fov_deg = fov_deg
+        # Nudge the auto-computed top-down pose (metres). The overhead camera
+        # sits directly above its lookat, so x/y move it forward/back/sideways
+        # and height_offset raises/lowers it.
+        self.x_offset = x_offset  # +X world (robot forward) / -X (backward)
+        self.y_offset = y_offset  # +Y world (left) / -Y (right)
+        self.height_offset = height_offset  # + up / - down
 
 
 class GlobalCamera(_CameraObservation):
@@ -294,8 +303,16 @@ class GlobalCamera(_CameraObservation):
         fov_deg: float = 50.0,
         elevation_deg: float = -50.0,
         azimuth_deg: float = 160.0,
+        lookat_x_offset: float = 0.0,
+        lookat_y_offset: float = 0.0,
+        distance_scale: float = 1.0,
     ) -> None:
         super().__init__(width=width, height=height)
         self.fov_deg = fov_deg
         self.elevation_deg = elevation_deg
         self.azimuth_deg = azimuth_deg
+        # Shift the aim point (metres) and scale the auto-computed distance.
+        # distance_scale > 1 pulls the camera back; < 1 pushes it closer.
+        self.lookat_x_offset = lookat_x_offset
+        self.lookat_y_offset = lookat_y_offset
+        self.distance_scale = distance_scale

@@ -71,30 +71,43 @@ def _resize_camera(comp, width: int, height: int):
             fov_deg=comp.fov_deg,
             elevation_deg=comp.elevation_deg,
             azimuth_deg=comp.azimuth_deg,
+            lookat_x_offset=getattr(comp, "lookat_x_offset", 0.0),
+            lookat_y_offset=getattr(comp, "lookat_y_offset", 0.0),
+            distance_scale=getattr(comp, "distance_scale", 1.0),
         )
     if isinstance(comp, OverheadCamera):
-        return OverheadCamera(width=width, height=height, fov_deg=comp.fov_deg)
+        return OverheadCamera(
+            width=width,
+            height=height,
+            fov_deg=comp.fov_deg,
+            x_offset=getattr(comp, "x_offset", 0.0),
+            y_offset=getattr(comp, "y_offset", 0.0),
+            height_offset=getattr(comp, "height_offset", 0.0),
+        )
     return comp
 
 
 def _wire_cameras(observations: list, wrist_wh, overhead_wh) -> list:
-    """Ensure a wrist + overhead/global camera are present at the given sizes."""
+    """Ensure a wrist + global + overhead camera are present at the given sizes."""
     ww, wh = wrist_wh
     ow, oh = overhead_wh
     out: list = []
-    found_wrist = found_overhead = False
+    found_wrist = found_global = found_overhead = False
     for comp in observations:
         if isinstance(comp, WristCamera):
             out.append(_resize_camera(comp, ww, wh))
             found_wrist = True
-        elif isinstance(comp, (GlobalCamera, OverheadCamera)):
+        elif isinstance(comp, GlobalCamera):
+            out.append(_resize_camera(comp, ow, oh))
+            found_global = True
+        elif isinstance(comp, OverheadCamera):
             out.append(_resize_camera(comp, ow, oh))
             found_overhead = True
         else:
             out.append(comp)
     if not found_wrist:
         out.append(WristCamera(width=ww, height=wh))
-    if not found_overhead:
+    if not found_global and not found_overhead:
         out.append(OverheadCamera(width=ow, height=oh))
     return out
 
@@ -258,14 +271,54 @@ class SimFollower:
         last = getattr(self, "_last_obs", None)
         if isinstance(last, dict):
             wrist = last.get("wrist_camera")
-            overhead = last.get("global_camera")
-            if overhead is None:
-                overhead = last.get("overhead_camera")
+            global_img = last.get("global_camera")
+            overhead_img = last.get("overhead_camera")
             if wrist is not None:
                 obs["wrist"] = wrist
-            if overhead is not None:
-                obs["overhead"] = overhead
+            if global_img is not None:
+                obs["global"] = global_img
+            if overhead_img is not None:
+                obs["overhead"] = overhead_img
         return obs
 
     def last_step_info(self) -> StepInfo | None:
         return self._last_step_info
+
+    # ------------------------------------------------------------------
+    # Replay capture helpers (for domain-randomised state playback)
+    # ------------------------------------------------------------------
+
+    def current_qpos(self) -> np.ndarray:
+        """Return a copy of the full MuJoCo qpos (robot + every piece)."""
+        return np.asarray(self.env.unwrapped.data.qpos, dtype=np.float64).copy()
+
+    def wrist_camera_state(self) -> dict[str, Any] | None:
+        """Snapshot the (randomized) wrist camera pose so replay can reproduce it."""
+        u = self.env.unwrapped
+        cid = getattr(u, "_wrist_cam_id", None)
+        if cid is None:
+            return None
+        return {
+            "cam_pos": np.asarray(u.model.cam_pos[cid], dtype=np.float64).copy(),
+            "cam_quat": np.asarray(u.model.cam_quat[cid], dtype=np.float64).copy(),
+            "cam_fovy": float(u.model.cam_fovy[cid]),
+        }
+
+    def current_marks(self) -> dict[str, Any]:
+        """Return the currently selected source/target squares, if any."""
+        u = self.env.unwrapped
+        return u.get_marks() if hasattr(u, "get_marks") else {}
+
+    def scene_metadata(self) -> dict[str, Any]:
+        """Return everything replay needs to rebuild an identical env."""
+        u = self.env.unwrapped
+        c = u.config
+        return {
+            "env_id": self.env_id,
+            "board_center": list(getattr(c, "board_center", (0.235, 0.0))),
+            "square_size": getattr(c, "square_size", 0.03375),
+            "board_thickness": getattr(c, "board_thickness", 0.006),
+            "mesh_dir": getattr(c, "mesh_dir", None),
+            "wrist_wh": list(self.wrist_wh),
+            "overhead_wh": list(self.overhead_wh),
+        }

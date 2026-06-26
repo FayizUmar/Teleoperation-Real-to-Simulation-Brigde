@@ -7,6 +7,7 @@ stays drop-in compatible with policy training pipelines.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,10 @@ class RecordingState:
     episode_states: list[np.ndarray] = field(default_factory=list)
     episode_wrist_images: list[np.ndarray] = field(default_factory=list)
     episode_overhead_images: list[np.ndarray] = field(default_factory=list)
+    # Full MuJoCo qpos per frame (robot + all pieces) for deterministic replay.
+    episode_qpos: list[np.ndarray] = field(default_factory=list)
+    # Scene + wrist-camera snapshot captured when recording starts.
+    replay_meta: dict = field(default_factory=dict)
 
     def clear_episode(self) -> None:
         """Drop everything recorded for the current episode."""
@@ -41,6 +46,8 @@ class RecordingState:
         self.episode_states.clear()
         self.episode_wrist_images.clear()
         self.episode_overhead_images.clear()
+        self.episode_qpos.clear()
+        self.replay_meta = {}
         self.terminated_at_frame = None
 
     @property
@@ -54,14 +61,17 @@ class RecordingState:
         state: dict[str, float],
         wrist: np.ndarray | None,
         overhead: np.ndarray | None,
+        qpos: np.ndarray | None = None,
     ) -> None:
-        """Append one frame's action/state vectors and camera images."""
+        """Append one frame's action/state vectors, camera images, and qpos."""
         self.episode_actions.append(dict_to_vector(action))
         self.episode_states.append(dict_to_vector(state))
         if wrist is not None:
             self.episode_wrist_images.append(wrist)
         if overhead is not None:
             self.episode_overhead_images.append(overhead)
+        if qpos is not None:
+            self.episode_qpos.append(np.asarray(qpos, dtype=np.float32))
 
 
 def dict_to_vector(
@@ -108,6 +118,11 @@ class DatasetWriter:
             root=root,
             use_videos=True,
         )
+        # Sidecar dir holding per-episode qpos trajectories + scene metadata that
+        # the DR replay engine reads back (kept out of the LeRobot dataset proper).
+        self._replay_dir = Path(self.dataset.root) / "replay_meta"
+        self._replay_dir.mkdir(parents=True, exist_ok=True)
+        self._episode_idx = 0
 
     def add_episode(self, state: RecordingState, task: str) -> int:
         """Write one buffered episode and return the number of frames saved."""
@@ -127,7 +142,31 @@ class DatasetWriter:
             )
             self.dataset.add_frame(frame)
         self.dataset.save_episode()
+        self._write_replay_sidecar(state, task)
+        self._episode_idx += 1
         return n
+
+    def _write_replay_sidecar(self, state: RecordingState, task: str) -> None:
+        """Persist qpos trajectory + scene/wrist-cam metadata for DR replay."""
+        if not state.episode_qpos:
+            return  # nothing to replay (qpos wasn't captured)
+        ep = self._episode_idx
+        meta = dict(state.replay_meta)
+        wrist_cam = meta.pop("wrist_cam", None) or {}
+
+        arrays = {
+            "qpos": np.asarray(state.episode_qpos, dtype=np.float32),
+            "actions": np.asarray(state.episode_actions, dtype=np.float32),
+            "states": np.asarray(state.episode_states, dtype=np.float32),
+        }
+        if wrist_cam:
+            arrays["wrist_cam_pos"] = np.asarray(wrist_cam["cam_pos"], dtype=np.float32)
+            arrays["wrist_cam_quat"] = np.asarray(wrist_cam["cam_quat"], dtype=np.float32)
+            arrays["wrist_cam_fovy"] = np.asarray([wrist_cam["cam_fovy"]], dtype=np.float32)
+        np.savez(self._replay_dir / f"episode_{ep:04d}.npz", **arrays)
+
+        meta_out = {**meta, "task": task, "num_frames": int(state.num_frames)}
+        (self._replay_dir / f"episode_{ep:04d}.json").write_text(json.dumps(meta_out, indent=2))
 
     def finalize(self) -> None:
         self.dataset.finalize()

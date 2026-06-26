@@ -56,10 +56,21 @@ def _with_selected_cameras(
 
 def _hw_to_dataset_features():
     """Return LeRobot's feature-schema converter across supported 0.5.x layouts."""
-    try:
-        return import_module("lerobot.datasets.feature_utils").hw_to_dataset_features
-    except (ImportError, AttributeError):  # LeRobot 0.5.0 compatibility
-        return import_module("lerobot.datasets.utils").hw_to_dataset_features
+    # The function has lived in a few modules across 0.5.x releases; try each.
+    candidates = (
+        "lerobot.utils.feature_utils",  # LeRobot 0.5.2
+        "lerobot.datasets.feature_utils",
+        "lerobot.datasets.utils",  # LeRobot 0.5.0
+    )
+    for module_name in candidates:
+        try:
+            return import_module(module_name).hw_to_dataset_features
+        except (ImportError, AttributeError):
+            continue
+    raise ImportError(
+        "Could not locate hw_to_dataset_features in any known LeRobot module: "
+        f"{candidates}"
+    )
 
 
 def build_features(

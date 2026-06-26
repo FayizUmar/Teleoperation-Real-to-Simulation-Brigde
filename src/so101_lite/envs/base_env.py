@@ -94,7 +94,27 @@ class SO101NexusMuJoCoBaseEnv(gymnasium.Env):
         self._privileged_state: np.ndarray | None = None
         self._init_qpos_clamp_warned = False
 
+    def _recolor_robot(self) -> None:
+        """Recolor the robot's gold body panels to ``config.robot_colors``.
+
+        Detects the menagerie's yellow body material (rgba 1 0.82 0.12) and
+        retints just those, leaving the dark motors and any scene materials
+        (board / pieces / masks) alone. ``"yellow"`` is a no-op (keeps the gold).
+        """
+        colors = getattr(self.config, "robot_colors", None)
+        if not colors or (isinstance(colors, str) and colors == "yellow"):
+            return
+        from so101_lite.constants import sample_color
+
+        target = sample_color(colors)
+        gold = (1.0, 0.82, 0.12)
+        for i in range(self.model.nmat):
+            r, g, b = (float(v) for v in self.model.mat_rgba[i][:3])
+            if abs(r - gold[0]) < 0.06 and abs(g - gold[1]) < 0.06 and abs(b - gold[2]) < 0.06:
+                self.model.mat_rgba[i][0:3] = target[:3]
+
     def _finish_model_setup(self) -> None:
+        self._recolor_robot()
         self._joint_ids = np.array(
             [
                 mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)
@@ -195,7 +215,14 @@ class SO101NexusMuJoCoBaseEnv(gymnasium.Env):
             self._overhead_obs_cam = mujoco.MjvCamera()
             self._overhead_obs_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             self._overhead_obs_cam.lookat[:] = params["lookat"]
-            self._overhead_obs_cam.distance = params["distance"]
+            # Apply user nudges (metres). Camera sits straight above lookat, so
+            # shifting lookat x/y slides it forward/back/sideways; distance is
+            # its height, so height_offset raises/lowers it.
+            self._overhead_obs_cam.lookat[0] += getattr(cam, "x_offset", 0.0)
+            self._overhead_obs_cam.lookat[1] += getattr(cam, "y_offset", 0.0)
+            self._overhead_obs_cam.distance = params["distance"] + getattr(
+                cam, "height_offset", 0.0
+            )
             self._overhead_obs_cam.elevation = params["elevation"]
             self._overhead_obs_cam.azimuth = params["azimuth"]
             self._overhead_obs_renderer = mujoco.Renderer(
@@ -220,7 +247,11 @@ class SO101NexusMuJoCoBaseEnv(gymnasium.Env):
             self._global_obs_cam = mujoco.MjvCamera()
             self._global_obs_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             self._global_obs_cam.lookat[:] = params["lookat"]
-            self._global_obs_cam.distance = params["distance"]
+            self._global_obs_cam.lookat[0] += getattr(cam, "lookat_x_offset", 0.0)
+            self._global_obs_cam.lookat[1] += getattr(cam, "lookat_y_offset", 0.0)
+            self._global_obs_cam.distance = params["distance"] * getattr(
+                cam, "distance_scale", 1.0
+            )
             self._global_obs_cam.elevation = params["elevation"]
             self._global_obs_cam.azimuth = params["azimuth"]
             self._global_obs_renderer = mujoco.Renderer(
@@ -229,6 +260,13 @@ class SO101NexusMuJoCoBaseEnv(gymnasium.Env):
         else:
             self._global_obs_cam = None
             self._global_obs_renderer = None
+
+        # Scene option that additionally renders geom group 5 (the source/target
+        # square masks). Applied only to the overhead/global cameras so the masks
+        # never appear in the wrist feed. NB: group 4 holds the red gripper
+        # collision meshes, so we deliberately use group 5 instead.
+        self._mask_scene_option = mujoco.MjvOption()
+        self._mask_scene_option.geomgroup[5] = 1
 
         self.observation_space = self._build_observation_space()
 
@@ -677,13 +715,17 @@ class SO101NexusMuJoCoBaseEnv(gymnasium.Env):
         overhead_renderer = self._overhead_obs_renderer
         if overhead_renderer is not None:
             assert self._overhead_obs_cam is not None
-            overhead_renderer.update_scene(self.data, camera=self._overhead_obs_cam)
+            overhead_renderer.update_scene(
+                self.data, camera=self._overhead_obs_cam, scene_option=self._mask_scene_option
+            )
             obs["overhead_camera"] = overhead_renderer.render()
 
         global_renderer = self._global_obs_renderer
         if global_renderer is not None:
             assert self._global_obs_cam is not None
-            global_renderer.update_scene(self.data, camera=self._global_obs_cam)
+            global_renderer.update_scene(
+                self.data, camera=self._global_obs_cam, scene_option=self._mask_scene_option
+            )
             obs["global_camera"] = global_renderer.render()
 
         return obs

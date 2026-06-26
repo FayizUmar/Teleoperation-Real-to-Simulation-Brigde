@@ -23,6 +23,7 @@ from so101_lite import (
     get_ycb_texture_file,
     get_ycb_visual_mesh,
 )
+from so101_lite.camera_utils import build_scene_cameras_xml
 from so101_lite.config import (
     ControlMode,
     PickConfig,
@@ -88,6 +89,7 @@ def _build_scene_xml(
     objects: list[SceneObject],
     slot_names: list[str],
     ground_color: list[float],
+    cameras_xml: str = "",
 ) -> str:
     """Build the full MuJoCo XML string for all objects.
 
@@ -160,7 +162,7 @@ def _build_scene_xml(
     <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.5 0.5 0.5"/>
     <geom name="floor" type="plane" size="0 0 0.01" rgba="{gr} {gg} {gb} {ga}"
           pos="0 0 0" contype="1" conaffinity="1"/>
-
+{cameras_xml}
 {body_entries}  </worldbody>
 </mujoco>
 """
@@ -250,10 +252,15 @@ class PickEnv(SO101NexusMuJoCoBaseEnv):
         # Slots beyond n_slots will be hidden off-world at reset time.
         slot_names = [f"pick_slot_{i}" for i in range(n_pool)]
 
+        cameras_xml = build_scene_cameras_xml(
+            spawn_center=config.spawn_center,
+            spawn_max_radius=config.spawn_max_radius,
+        )
         xml_string = _build_scene_xml(
             scene_objects,
             slot_names,
             sample_color(config.ground_colors),
+            cameras_xml=cameras_xml,
         )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", dir=_SO101_DIR, delete=True) as f:
             f.write(xml_string)

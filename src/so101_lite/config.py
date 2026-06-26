@@ -768,16 +768,27 @@ class ChessBoardConfig(EnvironmentConfig):
 
     def __init__(
         self,
-        board_center: tuple[float, float] = (0.22, 0.0),
-        square_size: float = 0.025,
+        board_center: tuple[float, float] = (0.235, 0.0),
+        square_size: float = 0.03375,  # 27 cm board / 8
         board_thickness: float = 0.006,
+        board_yaw_deg: float = 0.0,  # rotate board surface in place (pieces unaffected)
         piece_colors: ColorConfig = "white",
         target_colors: ColorConfig = "green",
         source_colors: ColorConfig = "red",
         piece_radius: float = 0.010,
         piece_half_height: float = 0.013,
-        piece_mass: float = 0.015,
+        piece_mass: float = 0.02,
         home_thresh: float = 0.05,
+        # --- full mesh chess set (replaces the single cylinder piece) ---
+        mesh_dir: str | None = None,  # dir holding {pawn,rook,knight,bishop,queen,king}_white.obj
+        piece_fill_frac: float = 0.75,  # widest piece fills this fraction of a square
+        white_piece_rgba: tuple[float, float, float, float] = (0.90, 0.89, 0.85, 1.0),
+        black_piece_rgba: tuple[float, float, float, float] = (0.12, 0.12, 0.14, 1.0),
+        white_texture: str | None = None,  # DR: image-file material for white pieces
+        black_texture: str | None = None,  # DR: image-file material for black pieces
+        board_texture: str | None = None,  # image-file board surface; None => procedural squares
+        light_square_color: tuple[float, float, float, float] = (0.93, 0.87, 0.74, 1.0),
+        dark_square_color: tuple[float, float, float, float] = (0.18, 0.11, 0.06, 1.0),
         **kwargs,
     ) -> None:
         board_half = 4.0 * square_size
@@ -789,6 +800,7 @@ class ChessBoardConfig(EnvironmentConfig):
         self.board_center = board_center
         self.square_size = square_size
         self.board_thickness = board_thickness
+        self.board_yaw_deg = board_yaw_deg
         self.piece_colors = piece_colors
         self.target_colors = target_colors
         self.source_colors = source_colors
@@ -796,16 +808,22 @@ class ChessBoardConfig(EnvironmentConfig):
         self.piece_half_height = piece_half_height
         self.piece_mass = piece_mass
         self.home_thresh = home_thresh
+        self.mesh_dir = mesh_dir
+        self.piece_fill_frac = piece_fill_frac
+        self.white_piece_rgba = white_piece_rgba
+        self.black_piece_rgba = black_piece_rgba
+        self.white_texture = white_texture
+        self.black_texture = black_texture
+        self.board_texture = board_texture
+        self.light_square_color = light_square_color
+        self.dark_square_color = dark_square_color
 
         if self.home_thresh <= 0:
             raise ValueError(f"home_thresh must be > 0, got {self.home_thresh}")
         if not (0.01 <= self.square_size <= 0.10):
             raise ValueError(f"square_size must be in [0.01, 0.10], got {self.square_size}")
-        if self.piece_radius <= 0 or self.piece_radius >= self.square_size / 2:
-            raise ValueError(
-                f"piece_radius must be in (0, square_size/2={self.square_size / 2:.4f}), "
-                f"got {self.piece_radius}"
-            )
+        if not (0.0 < self.piece_fill_frac <= 1.0):
+            raise ValueError(f"piece_fill_frac must be in (0, 1], got {self.piece_fill_frac}")
         _validate_color_config(self.piece_colors, "piece_colors")
         _validate_color_config(self.target_colors, "target_colors")
         _validate_color_config(self.source_colors, "source_colors")
@@ -813,6 +831,7 @@ class ChessBoardConfig(EnvironmentConfig):
         if self.observations is None:
             from so101_lite.observations import (
                 GlobalCamera,
+                OverheadCamera,
                 WristCamera,
             )
 
@@ -822,6 +841,7 @@ class ChessBoardConfig(EnvironmentConfig):
                 GraspState(),
                 WristCamera(),
                 GlobalCamera(elevation_deg=-38.0, azimuth_deg=120.0),
+                OverheadCamera(),
             ]
 
     @property

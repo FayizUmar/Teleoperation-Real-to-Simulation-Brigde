@@ -12,6 +12,7 @@ import mujoco
 import numpy as np
 
 from so101_lite import get_so101_mujoco_model_dir, get_so101_mujoco_model_path
+from so101_lite.camera_utils import build_scene_cameras_xml
 from so101_lite.config import (
     ControlMode,
     PickAndPlaceConfig,
@@ -32,6 +33,7 @@ def _build_scene_xml(
     target_disc_radius: float,
     cube_mass: float,
     ground_color: list[float],
+    cameras_xml: str = "",
 ) -> str:
     r, g, b, a = cube_color
     tr, tg, tb, ta = target_color
@@ -54,7 +56,7 @@ def _build_scene_xml(
     <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.5 0.5 0.5"/>
     <geom name="floor" type="plane" size="0 0 0.01" rgba="{gr} {gg} {gb} {ga}"
           pos="0 0 0" contype="1" conaffinity="1"/>
-
+{cameras_xml}
     <body name="cube" pos="0.15 0 {hs}">
       <freejoint name="cube_joint"/>
       <geom name="cube_geom" type="box" size="{hs} {hs} {hs}"
@@ -108,6 +110,10 @@ class PickAndPlaceEnv(SO101NexusMuJoCoBaseEnv):
         self.target_disc_radius = config.target_disc_radius
         self.task_description = self.config.task_description
 
+        cameras_xml = build_scene_cameras_xml(
+            spawn_center=config.spawn_center,
+            spawn_max_radius=config.spawn_max_radius,
+        )
         xml_string = _build_scene_xml(
             config.cube_half_size,
             sample_color(config.cube_colors),
@@ -115,6 +121,7 @@ class PickAndPlaceEnv(SO101NexusMuJoCoBaseEnv):
             config.target_disc_radius,
             config.cube_mass,
             sample_color(config.ground_colors),
+            cameras_xml=cameras_xml,
         )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", dir=_SO101_DIR, delete=True) as f:
             f.write(xml_string)

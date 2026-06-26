@@ -116,6 +116,22 @@ def get_leader(robot_type: str, port: str, leader_id: str) -> LeaderProtocol:
     return SO101Leader(SO101LeaderConfig(port=port, use_degrees=True, id=leader_id))
 
 
+class DummyLeader:
+    """Satisfies LeaderProtocol with no hardware — arm holds its rest pose."""
+
+    _REST_DEG: tuple[float, ...] = (0.0, -90.0, 90.0, 37.8, 0.0, 50.0)
+
+    def connect(self) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        pass
+
+    def get_action(self) -> dict:
+        names = (*SO101_JOINT_NAMES[:-1], "gripper")
+        return {f"{name}.pos": v for name, v in zip(names, self._REST_DEG)}
+
+
 def import_backend_for_env_id(env_id: str) -> None:
     """Ensure the so101-lite MuJoCo envs are registered for *env_id*."""
     import so101_lite.envs  # noqa: F401 — registers all MuJoCo env ids on import

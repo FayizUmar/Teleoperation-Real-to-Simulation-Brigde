@@ -9,6 +9,7 @@ import mujoco
 import numpy as np
 
 from so101_lite import get_so101_mujoco_model_dir, get_so101_mujoco_model_path
+from so101_lite.camera_utils import build_scene_cameras_xml
 from so101_lite.config import DIRECTION_VECTORS, ControlMode, MoveConfig
 from so101_lite.constants import sample_color
 from so101_lite.rewards import simple_reward
@@ -18,7 +19,7 @@ _SO101_DIR = get_so101_mujoco_model_dir()
 _SO101_XML = get_so101_mujoco_model_path()
 
 
-def _build_move_scene_xml(ground_rgba: list[float]) -> str:
+def _build_move_scene_xml(ground_rgba: list[float], cameras_xml: str = "") -> str:
     """Build MuJoCo XML string for the move scene (robot + floor + target site)."""
     robot_path = str(_SO101_XML)
     gr, gg, gb, ga = ground_rgba
@@ -38,6 +39,7 @@ def _build_move_scene_xml(ground_rgba: list[float]) -> str:
     <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.5 0.5 0.5"/>
     <geom name="floor" type="plane" size="0 0 0.01" rgba="{gr} {gg} {gb} {ga}"
           pos="0 0 0" contype="1" conaffinity="1"/>
+{cameras_xml}
     <site name="move_target" type="sphere" size="0.015" rgba="0 0.8 0.2 0.7"
           pos="0.15 0 0.1" group="1"/>
   </worldbody>
@@ -77,7 +79,11 @@ class MoveEnv(SO101NexusMuJoCoBaseEnv):
         )
 
         ground_rgba = sample_color(config.ground_colors)
-        xml_string = _build_move_scene_xml(ground_rgba)
+        cameras_xml = build_scene_cameras_xml(
+            spawn_center=config.spawn_center,
+            spawn_max_radius=config.spawn_max_radius,
+        )
+        xml_string = _build_move_scene_xml(ground_rgba, cameras_xml=cameras_xml)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", dir=_SO101_DIR, delete=True) as f:
             f.write(xml_string)
             f.flush()

@@ -10,6 +10,7 @@ import mujoco
 import numpy as np
 
 from so101_lite import get_so101_mujoco_model_dir, get_so101_mujoco_model_path
+from so101_lite.camera_utils import build_scene_cameras_xml
 from so101_lite.config import ControlMode, LookAtConfig
 from so101_lite.constants import COLOR_MAP, sample_color
 from so101_lite.rewards import orientation_progress, simple_reward
@@ -22,7 +23,7 @@ _SO101_DIR = get_so101_mujoco_model_dir()
 _SO101_XML = get_so101_mujoco_model_path()
 
 
-def _build_look_at_scene_xml(obj: CubeObject, ground_rgba: list[float]) -> str:
+def _build_look_at_scene_xml(obj: CubeObject, ground_rgba: list[float], cameras_xml: str = "") -> str:
     """Build MuJoCo XML string for the look-at scene (robot + floor + target object).
 
     Only CubeObject is supported for the look-at target; the cube is placed as
@@ -48,6 +49,7 @@ def _build_look_at_scene_xml(obj: CubeObject, ground_rgba: list[float]) -> str:
     <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.5 0.5 0.5"/>
     <geom name="floor" type="plane" size="0 0 0.01" rgba="{gr} {gg} {gb} {ga}"
           pos="0 0 0" contype="1" conaffinity="1"/>
+{cameras_xml}
     <body name="look_target" pos="0.15 0 {hs}">
       <freejoint name="look_target_joint"/>
       <geom name="look_target_geom" type="box" size="{hs} {hs} {hs}"
@@ -95,7 +97,11 @@ class LookAtEnv(SO101NexusMuJoCoBaseEnv):
         self._target_obj: CubeObject = config.objects[0]  # type: ignore[assignment]
 
         ground_rgba = sample_color(config.ground_colors)
-        xml_string = _build_look_at_scene_xml(self._target_obj, ground_rgba)
+        cameras_xml = build_scene_cameras_xml(
+            spawn_center=config.spawn_center,
+            spawn_max_radius=config.spawn_max_radius,
+        )
+        xml_string = _build_look_at_scene_xml(self._target_obj, ground_rgba, cameras_xml=cameras_xml)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", dir=_SO101_DIR, delete=True) as f:
             f.write(xml_string)
             f.flush()
